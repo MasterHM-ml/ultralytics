@@ -75,6 +75,7 @@ def on_predict_postprocess_end(predictor: object, persist: bool = False) -> None
             predictor.vid_path[i if is_stream else 0] = vid_path
 
         det = (predictor.results[i].obb if is_obb else predictor.results[i].boxes).cpu().numpy()
+        # ! det.data is a big tensor of detections - x,y,x,y,conf,class
         if len(det) == 0:
             continue
         tracks = tracker.update(det, im0s[i])
