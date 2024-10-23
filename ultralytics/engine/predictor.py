@@ -110,7 +110,7 @@ class BasePredictor:
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
         self.txt_path = None
         self._lock = threading.Lock()  # for automatic thread-safe inference
-        self.raw_results = None
+        # self.raw_results = None
         callbacks.add_integration_callbacks(self)
 
     def preprocess(self, im):
@@ -260,7 +260,7 @@ class BasePredictor:
                 # Postprocess
                 with profilers[2]:
                     self.results = self.postprocess(preds, im, im0s)
-                    self.raw_results = self.results.copy()
+                    # self.raw_results = self.results.copy()
                 self.run_callbacks("on_predict_postprocess_end") # ! this line is removing ball from predictions during track
 
                 # Visualize, save, write results
@@ -280,7 +280,8 @@ class BasePredictor:
                     LOGGER.info("\n".join(s))
 
                 self.run_callbacks("on_predict_batch_end")
-                yield from (self.results, self.raw_results)
+                # yield from (self.results, self.raw_results)
+                yield from (self.results)
 
         # Release assets
         for v in self.vid_writer.values():
@@ -348,8 +349,8 @@ class BasePredictor:
         # Save results
         if self.args.save_txt:
             result.save_txt(f"{self.txt_path}.txt", save_conf=self.args.save_conf)
-            self.raw_results[0].save_dir = result.save_dir
-            self.raw_results[0].save_txt(f"{self.txt_path}_raw.txt", save_conf=self.args.save_conf)
+            # self.raw_results[0].save_dir = result.save_dir
+            # self.raw_results[0].save_txt(f"{self.txt_path}_raw.txt", save_conf=self.args.save_conf)
         if self.args.save_crop:
             result.save_crop(save_dir=self.save_dir / "crops", file_name=self.txt_path.stem)
         if self.args.show:
