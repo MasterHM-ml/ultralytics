@@ -1,6 +1,5 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
-import numpy as np
 from functools import partial
 from pathlib import Path
 
@@ -82,20 +81,10 @@ def on_predict_postprocess_end(predictor: object, persist: bool = False) -> None
         tracks = tracker.update(det, im0s[i])
         if len(tracks) == 0:
             continue
-        # idx = tracks[:, -1].astype(int)
-        # predictor.results[i] = predictor.results[i][idx]
-
-        for indexer, raw_pred_index in enumerate(range(len(predictor.results[i]))):
-            raw_pred = predictor.results[i][raw_pred_index].boxes
-            bbox_ = raw_pred.xyxy.cpu().numpy()
-            conf_ = raw_pred.conf.cpu().numpy().item()
-            cls_ = raw_pred.cls.cpu().numpy().item()
-            if any([all(np.append(bbox_, [conf_, cls_])==track_item) for track_item in tracks[:, [0,1,2,3,5,6]]]):
-                continue
-            else:
-                dropped_raw_pred = np.append(bbox_, np.array([-1000-indexer, conf_, cls_, tracks.shape[0]+indexer]))
-                tracks = np.concatenate([tracks,dropped_raw_pred.reshape(1,-1)])
+        idx = tracks[:, -1].astype(int)
+        predictor.results[i] = predictor.results[i][idx]
         update_args = {"obb" if is_obb else "boxes": torch.as_tensor(tracks[:, :-1])}
+        update_args["boxes"][:, 0:4] = predictor.results[i].boxes.data[:, 0:4] # kalman filter was changing the bbox coordinates
         predictor.results[i].update(**update_args)
 
 

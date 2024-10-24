@@ -35,9 +35,12 @@ import threading
 from pathlib import Path
 
 import cv2
-import numpy as np
 import torch
+import numpy as np
+from copy import deepcopy
 
+
+from ultralytics.engine.results import Boxes
 from ultralytics.cfg import get_cfg, get_save_dir
 from ultralytics.data import load_inference_source
 from ultralytics.data.augment import LetterBox, classify_transforms
@@ -110,7 +113,7 @@ class BasePredictor:
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
         self.txt_path = None
         self._lock = threading.Lock()  # for automatic thread-safe inference
-        # self.raw_results = None
+        self.raw_results = None
         callbacks.add_integration_callbacks(self)
 
     def preprocess(self, im):
@@ -260,7 +263,7 @@ class BasePredictor:
                 # Postprocess
                 with profilers[2]:
                     self.results = self.postprocess(preds, im, im0s)
-                    # self.raw_results = self.results.copy()
+                    self.raw_results = deepcopy(self.results)
                 self.run_callbacks("on_predict_postprocess_end") # ! this line is removing ball from predictions during track
 
                 # Visualize, save, write results
@@ -280,7 +283,6 @@ class BasePredictor:
                     LOGGER.info("\n".join(s))
 
                 self.run_callbacks("on_predict_batch_end")
-                # yield from (self.results, self.raw_results)
                 yield from (self.results)
 
         # Release assets
@@ -333,7 +335,28 @@ class BasePredictor:
         self.txt_path = self.save_dir / "labels" / (p.stem + ("" if self.dataset.mode == "image" else f"_{frame}"))
         string += "{:g}x{:g} ".format(*im.shape[2:])
         result = self.results[i]
+        raw_result = self.raw_results[i]
+        
+        merged_results_tensor = torch.zeros((raw_result.boxes.data.shape[0], # number of total detection
+                                                result.boxes.data.shape[1] # number of columns from tracking tensor (after adding track id column)
+                                            ))
+        for indexer, raw_result_row in enumerate(raw_result.boxes.data.cpu()):
+            if raw_result_row[-2] < self.args.conf:
+                continue
+            matched=False
+            for inner_index, result_row in enumerate(result.boxes.data.cpu()[:, [0,1,2,3,5,6]]):
+                if all(torch.ceil(raw_result_row)==torch.ceil(result_row)):
+                    merged_results_tensor[indexer] = result.boxes.data[inner_index]
+                    matched=True
+                    break
+            if not matched:
+                list_data = raw_result_row.tolist()
+                list_data.insert(4, -1)
+                merged_results_tensor[indexer] = torch.tensor(list_data)
+        merged_results = deepcopy(result)
+        merged_results.boxes = Boxes(boxes=merged_results_tensor, orig_shape=result.orig_shape)
         result.save_dir = self.save_dir.__str__()  # used in other locations
+        merged_results.save_dir = self.save_dir.__str__()  # used in other locations
         string += f"{result.verbose()}{result.speed['inference']:.1f}ms"
 
         # Add predictions to image
@@ -348,11 +371,9 @@ class BasePredictor:
 
         # Save results
         if self.args.save_txt:
-            result.save_txt(f"{self.txt_path}.txt", save_conf=self.args.save_conf)
-            # self.raw_results[0].save_dir = result.save_dir
-            # self.raw_results[0].save_txt(f"{self.txt_path}_raw.txt", save_conf=self.args.save_conf)
+            merged_results.save_txt(f"{self.txt_path}.txt", save_conf=self.args.save_conf)
         if self.args.save_crop:
-            result.save_crop(save_dir=self.save_dir / "crops", file_name=self.txt_path.stem)
+            merged_results.save_crop(save_dir=self.save_dir / "crops", file_name=self.txt_path.stem)
         if self.args.show:
             self.show(str(p))
         if self.args.save:
