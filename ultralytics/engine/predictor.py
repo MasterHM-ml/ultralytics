@@ -340,19 +340,21 @@ class BasePredictor:
         merged_results_tensor = torch.zeros((raw_result.boxes.data.shape[0], # number of total detection
                                                 result.boxes.data.shape[1] # number of columns from tracking tensor (after adding track id column)
                                             ))
-        for indexer, raw_result_row in enumerate(raw_result.boxes.data.cpu()):
-            if raw_result_row[-2] < self.args.conf:
-                continue
-            matched=False
-            for inner_index, result_row in enumerate(result.boxes.data.cpu()[:, [0,1,2,3,5,6]]):
-                if all(torch.ceil(raw_result_row)==torch.ceil(result_row)):
-                    merged_results_tensor[indexer] = result.boxes.data[inner_index]
-                    matched=True
-                    break
-            if not matched:
-                list_data = raw_result_row.tolist()
-                list_data.insert(4, -1)
-                merged_results_tensor[indexer] = torch.tensor(list_data)
+        raw_result_filtered = raw_result.boxes.data[raw_result.boxes.data[:, -2] >= 0].cpu() # 0 can be replaced with self.args.conf
+        raw_boxes = torch.ceil(raw_result_filtered).unsqueeze(1)
+        tracked_boxes = torch.ceil(result.boxes.data[:, [0, 1, 2, 3, 5, 6]]).unsqueeze(0)
+        matches = torch.all(raw_boxes == tracked_boxes, dim=2)
+        matched_indices = matches.nonzero(as_tuple=True)
+        merged_results_tensor[matched_indices[0]] = result.boxes.data[matched_indices[1]]
+
+        unmatched_indices = torch.where(~matches.any(dim=1))[0]
+        unmatched_raw = raw_result_filtered[unmatched_indices].clone()
+        unmatched_raw = torch.cat([unmatched_raw[:, :4], torch.full((unmatched_raw.shape[0], 1), -1, ), unmatched_raw[:, 4:]], dim=1)
+        merged_results_tensor[unmatched_indices] = unmatched_raw
+
+        non_zero_rows = torch.any(merged_results_tensor != 0, dim=1)
+        merged_results_tensor = merged_results_tensor[non_zero_rows]
+
         merged_results = deepcopy(result)
         merged_results.boxes = Boxes(boxes=merged_results_tensor, orig_shape=result.orig_shape)
         result.save_dir = self.save_dir.__str__()  # used in other locations
