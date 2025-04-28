@@ -75,6 +75,7 @@ def on_predict_postprocess_end(predictor: object, persist: bool = False) -> None
             predictor.vid_path[i if is_stream else 0] = vid_path
 
         det = (predictor.results[i].obb if is_obb else predictor.results[i].boxes).cpu().numpy()
+        # ! det.data is a big tensor of detections - x,y,x,y,conf,class
         if len(det) == 0:
             continue
         tracks = tracker.update(det, im0s[i])
@@ -84,6 +85,7 @@ def on_predict_postprocess_end(predictor: object, persist: bool = False) -> None
         predictor.results[i] = predictor.results[i][idx]
 
         update_args = {"obb" if is_obb else "boxes": torch.as_tensor(tracks[:, :-1])}
+        update_args["boxes"][:, 0:4] = predictor.results[i].boxes.data[:, 0:4] # kalman filter was changing the bbox coordinates
         predictor.results[i].update(**update_args)
 
 
