@@ -336,9 +336,10 @@ class BasePredictor:
         string += "{:g}x{:g} ".format(*im.shape[2:])
         result = self.results[i]
         raw_result = self.raw_results[i]
-        
+        if result.boxes.data.shape[1] == 6:
+            result.boxes.data = torch.cat([result.boxes.data[:, :4], torch.full((result.boxes.data.shape[0], 1), -1), result.boxes.data[:, 4:]], dim=1)
         merged_results_tensor = torch.zeros((raw_result.boxes.data.shape[0], # number of total detection
-                                                result.boxes.data.shape[1] # number of columns from tracking tensor (after adding track id column)
+                                             result.boxes.data.shape[1] # number of columns from tracking tensor (after adding track id column)
                                             ))
         raw_result_filtered = raw_result.boxes.data[raw_result.boxes.data[:, -2] >= self.args.conf].cpu() # 0 can be replaced with self.args.conf
         raw_boxes = torch.ceil(raw_result_filtered).unsqueeze(1)
@@ -349,10 +350,7 @@ class BasePredictor:
 
         unmatched_indices = torch.where(~matches.any(dim=1))[0]
         unmatched_raw = raw_result_filtered[unmatched_indices].clone()
-        if raw_result.boxes.data.shape[0]:
-            unmatched_raw = torch.cat([unmatched_raw[:, :4], torch.full((unmatched_raw.shape[0], 1), -1, ), unmatched_raw[:, 4:]], dim=1)
-        else:
-            unmatched_raw = torch.cat([unmatched_raw[:, :4], unmatched_raw[:, 4:]], dim=1)
+        unmatched_raw = torch.cat([unmatched_raw[:, :4], torch.full((unmatched_raw.shape[0], 1), -1, ), unmatched_raw[:, 4:]], dim=1)
         merged_results_tensor[unmatched_indices] = unmatched_raw
 
         non_zero_rows = torch.any(merged_results_tensor != 0, dim=1)
