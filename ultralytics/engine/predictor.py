@@ -336,12 +336,14 @@ class BasePredictor:
         string += "{:g}x{:g} ".format(*im.shape[2:])
         result = self.results[i]
         raw_result = self.raw_results[i]
+        result.boxes.data = result.boxes.data.cpu()
+        raw_result.boxes.data = raw_result.boxes.data.cpu()
         if result.boxes.data.shape[1] == 6:
             result.boxes.data = torch.cat([result.boxes.data[:, :4], torch.full((result.boxes.data.shape[0], 1), -1), result.boxes.data[:, 4:]], dim=1)
         merged_results_tensor = torch.zeros((raw_result.boxes.data.shape[0], # number of total detection
                                              result.boxes.data.shape[1] # number of columns from tracking tensor (after adding track id column)
                                             ))
-        raw_result_filtered = raw_result.boxes.data[raw_result.boxes.data[:, -2] >= self.args.conf].cpu() # 0 can be replaced with self.args.conf
+        raw_result_filtered = raw_result.boxes.data[raw_result.boxes.data[:, -2] >= self.args.conf] # 0 can be replaced with self.args.conf
         raw_boxes = torch.ceil(raw_result_filtered).unsqueeze(1)
         tracked_boxes = torch.ceil(result.boxes.data[:, [0, 1, 2, 3, 5, 6]]).unsqueeze(0)
         matches = torch.all(raw_boxes == tracked_boxes, dim=2)
